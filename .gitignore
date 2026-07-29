@@ -1,0 +1,34 @@
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Variáveis e segredos
+*.tfvars
+*.tfvars.json
+!example.tfvars
+.env
+.env.*
+*.pem
+*.key
+*.ppk
+secrets/
+credentials
+
+# AWS
+.aws/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
