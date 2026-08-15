@@ -18,16 +18,16 @@ Lab de SIEM usando **Wazuh** hospedado na AWS, em formato **all-in-one** (manage
 | Volume EBS (root) | 50GB (expandido de 8GB original — ver Troubleshooting) |
 | Security Group | `wazuh-sg` — portas 443, 22, 1514, 1515, todas restritas a IPs específicos (nunca `0.0.0.0/0`) |
 | Elastic IP | Alocado e associado à instância |
-| Domínio | `vv-wazuh.duckdns.org` (DuckDNS, gratuito, apontando ao Elastic IP) |
+| Domínio | DuckDNS (gratuito, apontando ao Elastic IP) — nome real omitido por segurança |
 | Certificado TLS | Let's Encrypt via certbot, válido até 12/11/2026, renovação automática |
 | Wazuh | v4.14.7, instalação all-in-one |
 | Agents registrados | 1 (Windows pessoal, status Active) |
 
 ## Convenções adotadas
 
-- **Chaves SSH**: `ed25519`, um par por máquina (nunca reutilizar/copiar chave privada entre computadores). Organizadas em `C:\Users\vitas\.ssh\Wazuh-Server\`. Alias configurado em `~/.ssh/config` (host `Wazuh-Server`).
+- **Chaves SSH**: `ed25519`, um par por máquina (nunca reutilizar/copiar chave privada entre computadores). Organizadas em `%USERPROFILE%\.ssh\Wazuh-Server\`. Alias configurado em `~/.ssh/config` (host `Wazuh-Server`).
 - **Acesso SSH**: restrito por IP público (`/32`) no Security Group. EC2 Instance Connect (browser) usado apenas no bootstrap inicial, antes de haver chave configurada — removido do SG depois.
-- **Manager address para agents**: usar o domínio DuckDNS (`vv-wazuh.duckdns.org`), nunca o IP direto — mantém os agents funcionando mesmo se o Elastic IP mudar no futuro.
+- **Manager address para agents**: usar o domínio DuckDNS, nunca o IP direto — mantém os agents funcionando mesmo se o Elastic IP mudar no futuro.
 - **Credenciais**: armazenadas no KeePass (chaves SSH, senhas do dashboard). Nunca deixadas só no output do terminal.
 - **Documentação**: OneNote (conceitos/hardening), Word (processos passo a passo), Markdown (registro técnico do projeto, como este e o `wazuh-deployment.md`).
 
@@ -80,7 +80,7 @@ sudo tar -O -xvf wazuh-install-files.tar wazuh-install-files/wazuh-passwords.txt
 
 **Verificar certificado ativo no dashboard**
 ```
-openssl s_client -connect localhost:443 -servername vv-wazuh.duckdns.org 2>/dev/null | openssl x509 -noout -issuer
+openssl s_client -connect localhost:443 -servername <seu-dominio-duckdns> 2>/dev/null | openssl x509 -noout -issuer
 ```
 
 **Seu IP público atual (para atualizar regras do SG)**
