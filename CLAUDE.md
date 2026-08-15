@@ -1,83 +1,106 @@
 # wazuh-aws-siem
 
-Lab de SIEM usando **Wazuh** hospedado na AWS, em formato **all-in-one** (manager + indexer + dashboard na mesma instância EC2). Infraestrutura provisionada via **Terraform**. Projeto de estudo/lab, não produção.
+Lab de SIEM usando **Wazuh** hospedado na AWS, em formato **all-in-one** (manager + indexer + dashboard na mesma instância EC2). Projeto de estudo/portfólio — parte da iniciativa **VV Cloud Security**.
 
 ## Contexto do projeto
 
-- **Objetivo**: laboratório de SIEM com Wazuh para estudo de detecção, correlação de eventos e integração com ferramentas de segurança da AWS (CloudTrail, GuardDuty, Security Hub, etc).
-- **Topologia**: EC2 única (all-in-one), sem cluster, sem HA. Simplicidade > robustez aqui.
-- **Região**: `sa-east-1` (São Paulo). Não provisionar recursos em outras regiões sem necessidade explícita — evita custo de tráfego entre regiões e confusão de billing.
-- **IaC**: Terraform é a fonte de verdade. Mudanças de infra devem passar pelo `.tf`, não devem ser feitas clicando no console (exceto exploração pontual, e mesmo assim replicar depois no código).
-- **Budget mensal: US$ 8**. É um valor **muito apertado** para uma EC2 rodando 24/7 (mesmo um `t3.micro` em `sa-east-1` já consome boa parte disso só de compute). Ver seção de avisos abaixo.
+- **Objetivo**: laboratório de SIEM com Wazuh para estudo de detecção, correlação de eventos e integração futura com ferramentas de segurança da AWS (CloudTrail, GuardDuty).
+- **Topologia**: EC2 única (all-in-one), sem cluster, sem HA.
+- **Conta AWS**: standalone free tier, separada das organizations `vav`/`jbdsa` — nunca deve ser unida a uma Organization (perderia o Free Plan).
+- **Provisionamento atual**: manual, via console AWS + terminal (SSH/PowerShell). **Não há Terraform neste projeto ainda** — todo o setup até aqui foi feito passo a passo, com foco em entender cada componente antes de automatizar.
+- **Abordagem de aprendizado**: hands-on primeiro (console/CLI), automação depois. Prioridade em entender o "porquê" de cada passo, não só copiar comandos.
 
-## Convenções
+## Estado atual da infraestrutura
 
-- Estrutura Terraform sugerida: `envs/` ou raiz com `main.tf`, `variables.tf`, `outputs.tf`, `providers.tf`, `versions.tf`. Se crescer, separar em módulos (`modules/ec2-wazuh`, `modules/networking`, `modules/budget`).
-- Backend de state: usar remoto (S3 + DynamoDB lock) assim que possível, mesmo em lab — evita perder state local. Nome do bucket deve ser único e identificável (`<algo>-wazuh-siem-tfstate`).
-- Tags obrigatórias em todo recurso: `Project=wazuh-aws-siem`, `Environment=lab`, `ManagedBy=terraform`, `Owner=<seu nome/email>`. Facilita filtrar custo por tag no Cost Explorer.
-- Nomenclatura de recursos: prefixo `wazuh-siem-` (ex: `wazuh-siem-ec2`, `wazuh-siem-sg`, `wazuh-siem-eip`).
-- Nunca commitar: `.tfstate`, `.tfvars` com segredos, chaves `.pem`, credenciais AWS. Adicionar `.gitignore` cobrindo isso desde o primeiro commit.
-- Variáveis sensíveis (senhas do Wazuh, tokens) via `TF_VAR_*` de ambiente ou AWS Secrets Manager/SSM Parameter Store — nunca hardcoded no `.tf`.
+| Componente | Valor |
+|---|---|
+| Instância EC2 | `Wazuh-Server`, Ubuntu, `m7i-flex.large` (2 vCPU / 8GB RAM) |
+| Volume EBS (root) | 50GB (expandido de 8GB original — ver Troubleshooting) |
+| Security Group | `wazuh-sg` — portas 443, 22, 1514, 1515, todas restritas a IPs específicos (nunca `0.0.0.0/0`) |
+| Elastic IP | Alocado e associado à instância |
+| Domínio | `vv-wazuh.duckdns.org` (DuckDNS, gratuito, apontando ao Elastic IP) |
+| Certificado TLS | Let's Encrypt via certbot, válido até 12/11/2026, renovação automática |
+| Wazuh | v4.14.7, instalação all-in-one |
+| Agents registrados | 1 (Windows pessoal, status Active) |
 
-## Avisos de segurança
+## Convenções adotadas
 
-- **Budget de $8/mês é incompatível com EC2 rodando 24/7** na prática (t3.micro on-demand em sa-east-1 já ronda ~$7-9/mês só de compute, fora EBS, EIP ocioso, transferência de dados). Recomendo fortemente automatizar **start/stop programado** da instância (EventBridge Scheduler + Lambda, ou simplesmente parar manual fora do horário de estudo) para caber no orçamento.
-- **AWS Budgets com alertas** deve ser criado via Terraform (`aws_budgets_budget`) com thresholds em 50%, 80% e 100% do valor de $8, notificando por e-mail/SNS. Não depender de configurar isso manualmente no console.
-- **Nunca expor o Wazuh Dashboard (porta 443) direto para `0.0.0.0/0`**. Restringir Security Group ao seu IP público (`/32`) ou usar uma VPN/bastion. O mesmo vale para a porta 1514/1515 (agentes) e 55000 (API).
-- **Evitar SSH aberto (porta 22) para a internet**. Preferir **AWS Systems Manager Session Manager** (não precisa de porta aberta, nem de par de chaves exposto, e ainda evita custo de EIP se não precisar de IP fixo separado do SSM).
-- **Elastic IP não associado gera custo** — se alocar EIP, garantir que está sempre associado à instância, ou liberar quando a instância for parada por longos períodos.
-- Root/admin da conta AWS deve ter MFA ativado. Usar um usuário/role IAM dedicado para o Terraform (least privilege), nunca a conta root.
-- Wazuh gera senhas padrão na instalação (indexer, dashboard, API) — trocar todas antes de considerar o lab "pronto", mesmo sendo ambiente de estudo.
-- Snapshots/AMIs e volumes EBS podem conter dados sensíveis de teste — não deixar públicos.
-- Ativar **encryption at rest** no EBS da instância (`encrypted = true` no `aws_ebs_volume`/`root_block_device`) — não tem custo adicional relevante e é boa prática desde o início.
+- **Chaves SSH**: `ed25519`, um par por máquina (nunca reutilizar/copiar chave privada entre computadores). Organizadas em `C:\Users\vitas\.ssh\Wazuh-Server\`. Alias configurado em `~/.ssh/config` (host `Wazuh-Server`).
+- **Acesso SSH**: restrito por IP público (`/32`) no Security Group. EC2 Instance Connect (browser) usado apenas no bootstrap inicial, antes de haver chave configurada — removido do SG depois.
+- **Manager address para agents**: usar o domínio DuckDNS (`vv-wazuh.duckdns.org`), nunca o IP direto — mantém os agents funcionando mesmo se o Elastic IP mudar no futuro.
+- **Credenciais**: armazenadas no KeePass (chaves SSH, senhas do dashboard). Nunca deixadas só no output do terminal.
+- **Documentação**: OneNote (conceitos/hardening), Word (processos passo a passo), Markdown (registro técnico do projeto, como este e o `wazuh-deployment.md`).
 
-## Sugestões
+## Avisos de segurança (aplicados até aqui)
 
-- Considerar `t3.micro` ou `t3.small` com **burstable credits** e ver se ainda está no Free Tier (primeiros 12 meses de conta nova) — isso muda completamente a viabilidade do budget de $8.
-- Usar **Spot Instance** para o lab se puder tolerar interrupções — reduz custo de compute significativamente, mas não é recomendado se for deixar o Wazuh rodando por longos períodos sem supervisão.
-- Configurar **CloudWatch Billing Alarm** além do AWS Budgets, como camada extra de aviso.
-- Documentar no README (não neste arquivo) os passos de instalação do Wazuh (script oficial `wazuh-install.sh` all-in-one) para reprodutibilidade.
-- Testar o Terraform sempre com `terraform plan` antes de `apply`, e usar `terraform destroy` no fim de cada sessão de estudo se o objetivo for só reduzir custo (reprovisionar depois é rápido já que é IaC).
-- Integrar fontes de log AWS gradualmente: primeiro CloudTrail → S3 → Wazuh (via módulo AWS do Wazuh), depois GuardDuty findings, depois Security Hub. Não tentar tudo de uma vez.
+- Wazuh Dashboard (porta 443) **nunca exposto para `0.0.0.0/0`** — restrito ao IP público de cada máquina usada no projeto.
+- Portas 1514 (streaming de eventos) e 1515 (enrollment de agents) também restritas por IP, não abertas ao mundo.
+- SSH (porta 22) restrito por IP; chave pública/privada em vez de senha.
+- Elastic IP mantido sempre associado à instância rodando, para evitar cobrança por IP ocioso.
+- Senha padrão do dashboard (`admin`) gerada na instalação — recuperável via `wazuh-install-files.tar` caso não tenha sido salva na hora.
+
+## Débitos técnicos / pontos de atenção conhecidos
+
+- **Sem Terraform / IaC ainda**: toda a infra foi criada manualmente no console. Se o projeto evoluir para IaC, os recursos precisarão ser importados (`terraform import`) ou recriados do zero via código — decisão em aberto.
+- **Sem budget/billing alarm configurado formalmente** — vale considerar AWS Budgets ou CloudWatch Billing Alarm, já que é conta free tier com limites.
+- **Volume EBS root inicial (8GB) é insuficiente** para instalação all-in-one do Wazuh — causa disk full na instalação do wazuh-manager. Sempre provisionar 30-50GB desde a criação da instância.
+- **Path de download do instalador**: `https://packages.wazuh.com/4.x/wazuh-install.sh` retornou `AccessDenied` em uma tentativa; o path versionado `https://packages.wazuh.com/4.14/wazuh-install.sh` funcionou de forma consistente. Preferir sempre a versão explícita.
+
+## Troubleshooting documentado (resumo)
+
+Detalhes completos em `wazuh-deployment.md`. Resumo rápido para referência rápida:
+
+1. **Disco cheio na instalação do wazuh-manager** → expandir EBS (console) + `growpart`/`resize2fs` (SO) + limpar pacote quebrado (`dpkg --remove --force-remove-reinstreq`, `rm -rf /var/ossec`) + reinstalar com `wazuh-install.sh -a -o`.
+2. **Certificado Let's Encrypt não aplicava** → edição do `opensearch_dashboards.yml` via `nano` não salvou; corrigido com `sed` direto no arquivo, seguido de `systemctl restart wazuh-dashboard`.
+3. **Agent Windows: Error 1925 (privilégios insuficientes)** → `msiexec /q` falha silenciosamente se o PowerShell não estiver elevado ("Executar como administrador").
+4. **Agent Windows preso em "Never connected"** → regra do SG para porta 1515 liberada primeiro (completa enrollment), depois 1514 (necessária para streaming de eventos passar a "Active").
 
 ## Comandos do dia a dia
 
-**Terraform**
+**Conexão**
 ```
-terraform init
-terraform validate
-terraform plan -out=tfplan
-terraform apply tfplan
-terraform destroy          # usar com cautela, sempre revisar o que será destruído
-terraform state list
+ssh Wazuh-Server
 ```
 
-**AWS CLI (custo/billing)**
-```
-aws budgets describe-budgets --account-id <account-id>
-aws ce get-cost-and-usage --time-period Start=2026-07-01,End=2026-07-31 --granularity MONTHLY --metrics "UnblendedCost"
-```
-
-**AWS Systems Manager (acesso à instância sem SSH exposto)**
-```
-aws ssm start-session --target <instance-id> --region sa-east-1
-```
-
-**Wazuh (dentro da instância)**
+**Status dos serviços**
 ```
 sudo /var/ossec/bin/wazuh-control status
 sudo systemctl status wazuh-manager wazuh-indexer wazuh-dashboard
-sudo tail -f /var/ossec/logs/ossec.log
-sudo /var/ossec/bin/manage_agents
-sudo filebeat test output
 ```
 
-## Ferramentas e skills necessárias
+**Logs**
+```
+sudo tail -f /var/ossec/logs/ossec.log
+```
 
-- **Terraform** (CLI) + provider `hashicorp/aws`.
-- **AWS CLI v2** configurado com profile dedicado (não usar credenciais root).
-- **tfsec** ou **checkov** — scan de segurança do código Terraform antes de aplicar (Security Groups abertos, EBS sem encryption, etc).
-- **jq** — para parsear saída de `aws cli` e logs JSON do Wazuh.
-- **Session Manager plugin** (AWS CLI) para `aws ssm start-session`.
-- Skill `security-review` deste ambiente — rodar antes de aplicar mudanças de infra que envolvam Security Groups, IAM ou exposição de rede.
-- Git para versionar o Terraform (repo ainda não inicializado nesta pasta — considerar `git init` cedo).
+**Recuperar credenciais geradas na instalação**
+```
+sudo tar -O -xvf wazuh-install-files.tar wazuh-install-files/wazuh-passwords.txt
+```
+
+**Verificar certificado ativo no dashboard**
+```
+openssl s_client -connect localhost:443 -servername vv-wazuh.duckdns.org 2>/dev/null | openssl x509 -noout -issuer
+```
+
+**Seu IP público atual (para atualizar regras do SG)**
+```
+curl https://checkip.amazonaws.com
+```
+
+## Próximos passos
+
+- [ ] Integração AWS: GuardDuty + CloudTrail → S3 → módulo `aws-s3` do Wazuh (requer IAM Role dedicada com leitura restrita aos buckets)
+- [ ] Segundo agent, em instância Linux separada, para simular múltiplas plataformas monitoradas
+- [ ] Regras de alerta customizadas no dashboard
+- [ ] Avaliar migração para Terraform (IaC) uma vez que a arquitetura manual estiver validada e estável
+- [ ] AWS Budgets / billing alarm, já que a conta é free tier
+
+## Ferramentas e skills usadas até aqui
+
+- **AWS Console** (EC2, Security Groups, Volumes, Elastic IPs)
+- **SSH** (`ed25519`, `~/.ssh/config`)
+- **PowerShell** (Windows, instalação do agent)
+- **DuckDNS** (DNS dinâmico gratuito)
+- **certbot** (Let's Encrypt, modo standalone)
+- **KeePass** (armazenamento de credenciais)
