@@ -3,6 +3,7 @@
 *.tfstate
 *.tfstate.*
 *.tfplan
+tfplan.out
 crash.log
 crash.*.log
 override.tf
