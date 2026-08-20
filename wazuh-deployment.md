@@ -87,6 +87,10 @@ Localizados em `terraform/` na raiz do projeto:
 
 **State**: local (`terraform.tfstate` na própria pasta `terraform/`), sem backend remoto — sem locking, risco de perda se o arquivo sumir.
 
+### Instalação do agent Wazuh na instância
+
+Com a instância e o SG provisionados via Terraform, o pacote `wazuh-agent` (`.deb`, Ubuntu) foi instalado apontando para o manager via domínio DuckDNS (mesmo domínio usado no restante do projeto — ver seção 1). Agent registrado com o nome `Linux-Agent`; serviço habilitado e iniciado via `systemctl`. Status atual: **Active**, mesmo `node01` e versão (v4.14.7) do agent Windows.
+
 ### Troubleshooting — pacote RPM errado
 
 O assistente "Deploy new agent" do próprio dashboard Wazuh gerou um comando de instalação `.rpm` (`rpm -ihv ...`), mas a instância provisionada é Ubuntu, que precisa do pacote `.deb`. O erro aconteceu porque o comando sugerido foi copiado sem antes confirmar a distribuição selecionada no wizard. Corrigido trocando manualmente para o pacote `.deb` equivalente, instalado via `dpkg -i`.
@@ -133,7 +137,7 @@ Custo verificado via **AWS Cost Explorer** (console de Billing and Cost Manageme
 | Elastic IP | Alocado e associado |
 | Certificado TLS (Let's Encrypt) | Válido até 12/11/2026, renovação automática |
 | Agent Windows | Registrado, status Active |
-| Agent Linux (EC2 via Terraform) | Instância e SG provisionados; **agent Wazuh ainda não instalado/registrado na instância** |
+| Agent Linux (EC2 via Terraform) | Instância e SG provisionados; agent Wazuh instalado e registrado (`Linux-Agent`), status Active |
 | Terraform state | Local, sem backend remoto |
 | Usuário/grupo IAM Terraform | Criados; policy exata anexada — a confirmar |
 | SGs órfãos | Limpos (4 removidos) |
@@ -141,7 +145,6 @@ Custo verificado via **AWS Cost Explorer** (console de Billing and Cost Manageme
 
 ### Próximos passos
 
-- [ ] Instalar e registrar o Wazuh agent na instância Linux provisionada via Terraform (repetir o fluxo de enrollment: SG 1515 → 1514, `manager address` via DuckDNS, **usando o pacote `.deb` correto desta vez**)
 - [ ] Confirmar e documentar a policy IAM exata anexada ao grupo `Terraform-Automation-Group`
 - [ ] Integração AWS: GuardDuty + CloudTrail → S3 → módulo `aws-s3` do Wazuh (requer IAM Role dedicada com leitura restrita aos buckets)
 - [ ] Regras de alerta customizadas no dashboard

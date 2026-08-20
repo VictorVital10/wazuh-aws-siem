@@ -75,7 +75,7 @@ Deploy já validado (`terraform apply`) — instância e SG criados e funcionand
 
 - [ ] Integração AWS: GuardDuty + CloudTrail → S3 → módulo `aws-s3` do Wazuh
 - [x] Segundo agent, em instância Linux separada, para simular múltiplas plataformas monitoradas — provisionado via Terraform
-- [ ] Instalar e registrar o Wazuh agent na instância Linux provisionada
+- [x] Instalar e registrar o Wazuh agent na instância Linux provisionada — status Active
 - [ ] Regras de alerta customizadas no dashboard
 - [ ] Migrar o Wazuh Server (EC2, SG, EIP) para Terraform, uma vez validado o padrão adotado no agent
 - [ ] Configurar backend remoto para o Terraform state (S3 + lock)
