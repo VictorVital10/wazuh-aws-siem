@@ -1,9 +1,37 @@
 # Wazuh AWS SIEM
 
+![Status](https://img.shields.io/badge/status-lab%20ativo-brightgreen)
+![AWS](https://img.shields.io/badge/AWS-EC2-FF9900?logo=amazonaws&logoColor=white)
+![Terraform](https://img.shields.io/badge/IaC-Terraform-844FBA?logo=terraform&logoColor=white)
+![Wazuh](https://img.shields.io/badge/SIEM-Wazuh_4.14.7-1A73E8)
+![Ubuntu](https://img.shields.io/badge/OS-Ubuntu-E95420?logo=ubuntu&logoColor=white)
+
 Laboratório de SIEM (Security Information and Event Management) usando **Wazuh**, hospedado na **AWS**, em formato **all-in-one** (manager + indexer + dashboard na mesma instância EC2).
 
 Projeto de estudo/portfólio, parte da iniciativa **VV Cloud Security**.
 
+📄 Quer o passo a passo completo, com troubleshooting real (disco cheio, certificado, IAM, IP dinâmico, FinOps)? Veja o registro de deploy em [`wazuh-deployment.md`](./wazuh-deployment.md).
+
+## Índice
+
+- [Destaques](#destaques)
+- [Objetivo](#objetivo)
+- [Arquitetura](#arquitetura)
+- [Provisionamento](#provisionamento)
+- [Segurança aplicada](#seguranca)
+- [Débitos técnicos conhecidos](#debitos)
+- [Próximos passos](#proximos)
+
+<a id="destaques"></a>
+## Destaques
+
+- 🛠️ **Deploy real, não só tutorial**: SIEM all-in-one funcional na AWS, do zero ao agent monitorando eventos, com problemas reais resolvidos no caminho.
+- 🔐 **Hardening aplicado, não só documentado**: TLS via Let's Encrypt, acesso restrito por IP em todas as portas sensíveis, chaves `ed25519` por máquina, segredos fora do Git.
+- 🧱 **Primeira migração para IaC**: agent Linux provisionado via Terraform, com usuário/grupo IAM dedicado seguindo o princípio de least privilege.
+- 🧾 **Consciência de custo (FinOps)**: custo acompanhado via AWS Cost Explorer, instância parada manualmente quando ociosa.
+- 📚 **Troubleshooting documentado**: cada problema real (disco cheio, certificado não aplicando, IAM, `terraform destroy` acidental, IP dinâmico, SGs órfãos) registrado com causa raiz e correção — ver [`wazuh-deployment.md`](./wazuh-deployment.md).
+
+<a id="objetivo"></a>
 ## Objetivo
 
 Construir um ambiente prático de SIEM para estudar:
@@ -13,9 +41,29 @@ Construir um ambiente prático de SIEM para estudar:
 - Hardening de infraestrutura na AWS
 - Integração futura com serviços de segurança da AWS (CloudTrail, GuardDuty)
 
+<a id="arquitetura"></a>
 ## Arquitetura
 
 Topologia **all-in-one**: uma única instância EC2 rodando manager, indexer e dashboard do Wazuh — sem cluster, sem alta disponibilidade. Escolha deliberada para focar em aprendizado, não em produção.
+
+```mermaid
+flowchart LR
+    subgraph WS["EC2 - Wazuh-Server (all-in-one)"]
+        MGR[Wazuh Manager]
+        IDX[Wazuh Indexer]
+        DSH[Wazuh Dashboard]
+    end
+
+    AGW[Agent Windows]
+    AGL[Agent Linux - via Terraform]
+    USR[Usuário]
+
+    AGW -- "1514 / 1515 via DuckDNS" --> MGR
+    AGL -- "1514 / 1515 via DuckDNS" --> MGR
+    MGR --> IDX
+    IDX --> DSH
+    USR -- "HTTPS 443" --> DSH
+```
 
 | Componente | Detalhe |
 |---|---|
@@ -29,13 +77,15 @@ Topologia **all-in-one**: uma única instância EC2 rodando manager, indexer e d
 | Instância EC2 (Linux Agent) | `t3.micro`, provisionada via Terraform |
 | Security Group (Linux Agent) | Porta 22 (SSH) restrita a IP específico; egress liberado |
 
+<a id="provisionamento"></a>
 ## Provisionamento
 
 O **Wazuh Server** (manager + indexer + dashboard) continua sendo provisionado **manualmente**, via console AWS + terminal (SSH/PowerShell). A abordagem escolhida ali foi hands-on primeiro (entender cada componente passo a passo), automação depois.
 
 O **agente Linux** (segunda instância EC2, usada para simular uma plataforma adicional monitorada) já é provisionado via **Terraform** — primeiro recurso do projeto migrado para IaC, servindo como base para uma futura migração do restante da infraestrutura.
 
-### Infraestrutura como código (Terraform)
+<details>
+<summary><strong>Infraestrutura como código (Terraform) — detalhes</strong></summary>
 
 Localizado em `terraform/`. Recursos gerenciados:
 
@@ -53,24 +103,29 @@ Configuração:
 
 Deploy já validado (`terraform apply`) — instância e SG criados e funcionando na conta AWS do projeto.
 
+</details>
+
+<a id="seguranca"></a>
 ## Segurança aplicada
 
-- Dashboard do Wazuh (porta 443) nunca exposto para a internet — acesso restrito por IP.
-- Portas de streaming de eventos (1514) e enrollment de agents (1515) também restritas por IP.
-- Acesso SSH via chave `ed25519`, um par por máquina, sem autenticação por senha.
-- Elastic IP mantido sempre associado à instância ativa, evitando cobrança por IP ocioso.
-- Credenciais armazenadas em gerenciador de senhas, nunca deixadas apenas no output do terminal.
-- Conta AWS standalone (free tier), isolada de outras Organizations.
-- SG do agent Linux (Terraform) também restrito por IP — nenhuma porta aberta para `0.0.0.0/0`.
-- Segredos do Terraform (`terraform.tfvars`, `*.tfstate`, `tfplan.out`) mantidos fora do controle de versão via `.gitignore`.
+- ✅ Dashboard do Wazuh (porta 443) nunca exposto para a internet — acesso restrito por IP.
+- ✅ Portas de streaming de eventos (1514) e enrollment de agents (1515) também restritas por IP.
+- ✅ Acesso SSH via chave `ed25519`, um par por máquina, sem autenticação por senha.
+- ✅ Elastic IP mantido sempre associado à instância ativa, evitando cobrança por IP ocioso.
+- ✅ Credenciais armazenadas em gerenciador de senhas, nunca deixadas apenas no output do terminal.
+- ✅ Conta AWS standalone (free tier), isolada de outras Organizations.
+- ✅ SG do agent Linux (Terraform) também restrito por IP — nenhuma porta aberta para `0.0.0.0/0`.
+- ✅ Segredos do Terraform (`terraform.tfvars`, `*.tfstate`, `tfplan.out`) mantidos fora do controle de versão via `.gitignore`.
 
+<a id="debitos"></a>
 ## Débitos técnicos conhecidos
 
-- Wazuh Server ainda provisionado manualmente — apenas o agent Linux está em Terraform até o momento.
-- Terraform state é local, sem backend remoto (ex: S3 + DynamoDB lock) — risco em caso de perda do arquivo `.tfstate`.
-- Sem budget/billing alarm configurado formalmente.
-- Volume EBS root inicial (8GB) mostrou-se insuficiente para a instalação all-in-one do Wazuh; recomendado provisionar 30-50GB desde a criação da instância.
+- ⚠️ Wazuh Server ainda provisionado manualmente — apenas o agent Linux está em Terraform até o momento.
+- ⚠️ Terraform state é local, sem backend remoto (ex: S3 + DynamoDB lock) — risco em caso de perda do arquivo `.tfstate`.
+- ⚠️ Sem budget/billing alarm configurado formalmente.
+- ⚠️ Volume EBS root inicial (8GB) mostrou-se insuficiente para a instalação all-in-one do Wazuh; recomendado provisionar 30-50GB desde a criação da instância.
 
+<a id="proximos"></a>
 ## Próximos passos
 
 - [ ] Integração AWS: GuardDuty + CloudTrail → S3 → módulo `aws-s3` do Wazuh
