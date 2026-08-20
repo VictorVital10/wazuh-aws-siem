@@ -122,6 +122,14 @@ curl https://checkip.amazonaws.com
 - [ ] Configurar backend remoto para o Terraform state (S3 + DynamoDB lock)
 - [ ] AWS Budgets / billing alarm, já que a conta é free tier
 
+## Commit convention
+
+Formato: `<tipo>: descrição no imperativo`.
+
+- Tipos usados até aqui: `feat` (novo recurso/provisionamento), `security` (remoção de dados sensíveis, hardening), `docs` (documentação), `fix` (correção de bug), `chore` (manutenção sem impacto funcional).
+- Descrição em minúsculas, no imperativo (ex: "provision", "remove", "add", não "provisioned"/"removed"/"added"), sem ponto final.
+- Exemplos reais do histórico: `feat: provision linux agent via Terraform, EC2 + dedicated SG`, `security: remove exposed IPs, domain names, and files paths from .md file`.
+
 ## Ferramentas e skills usadas até aqui
 
 - **AWS Console** (EC2, Security Groups, Volumes, Elastic IPs)
