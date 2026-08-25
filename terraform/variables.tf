@@ -23,11 +23,6 @@ variable "vpc_id" {
   default = "vpc-06ff848d9b6540e15"
 }
 
-variable "personal_ip" {
-  description = "My personal PC's public IP"
-  type        = string
-}
-
 variable "professional_ip" {
   description = "My professional PC's public IP"
   type        = string

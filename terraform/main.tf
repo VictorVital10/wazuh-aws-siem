@@ -18,23 +18,23 @@ resource "aws_security_group" "agents_sg" {
 }
 
 # INGRESS RULES FOR SG
-resource "aws_vpc_security_group_ingress_rule" "ssh_personal" {
-  description       = "Allow SSH from personal IP"
-  security_group_id = aws_security_group.agents_sg.id
-  from_port         = 22
-  to_port           = 22
-  ip_protocol       = "tcp"
-  cidr_ipv4         = var.personal_ip
-}
-
-# resource "aws_vpc_security_group_ingress_rule" "ssh_professional" {
-# description       = "Allow SSH from professional IP"
+#resource "aws_vpc_security_group_ingress_rule" "ssh_personal" {
+# description       = "Allow SSH from personal IP"
 #security_group_id = aws_security_group.agents_sg.id
 #from_port         = 22
 #to_port           = 22
 #ip_protocol       = "tcp"
-#cidr_ipv4         = var.professional_ip
+#cidr_ipv4         = var.personal_ip
 #}
+
+ resource "aws_vpc_security_group_ingress_rule" "ssh_professional" {
+ description       = "Allow SSH from professional IP"
+security_group_id = aws_security_group.agents_sg.id
+from_port         = 22
+to_port           = 22
+ip_protocol       = "tcp"
+cidr_ipv4         = var.professional_ip
+}
 
 # EGRESS RULES FOR SG
 resource "aws_vpc_security_group_egress_rule" "allow_all_outbound" {
