@@ -21,9 +21,10 @@ Lab de SIEM usando **Wazuh** hospedado na AWS, em formato **all-in-one** (manage
 | Domínio | DuckDNS (gratuito, apontando ao Elastic IP) — nome real omitido por segurança |
 | Certificado TLS | Let's Encrypt via certbot, válido até 12/11/2026, renovação automática |
 | Wazuh | v4.14.7, instalação all-in-one |
-| Agents registrados | 1 (Windows pessoal, status Active) |
+| Agents registrados | 2 (Windows pessoal + `Linux-Agent` via Terraform, ambos Active) |
 | Instância EC2 (Linux Agent) | `linux_agent`, `t3.micro` — provisionada via Terraform |
 | Security Group (Linux Agent) | `agents_sg` — porta 22 restrita a IP específico, egress liberado — via Terraform |
+| Regras de alerta customizadas | 1 (`local_rules.xml`, SID `100002` — ver seção dedicada abaixo) |
 
 ## Convenções adotadas
 
@@ -61,6 +62,45 @@ Lab de SIEM usando **Wazuh** hospedado na AWS, em formato **all-in-one** (manage
   terraform plan -out=tfplan.out
   terraform apply tfplan.out
   ```
+
+## Regras de alerta customizadas (detecção)
+
+- **Localização**: `/var/ossec/etc/rules/local_rules.xml` no Wazuh Server. Nunca editar regras nativas em `/var/ossec/ruleset/rules/` (são sobrescritas em updates).
+- **Convenção de SID**: regras customizadas começam em `100000+` (faixa reservada, evita conflito com o ruleset oficial).
+- **Fluxo de trabalho adotado** para criar/validar uma regra nova (repetir para as próximas):
+  1. Identificar o evento que se quer detectar e a regra nativa correspondente (nunca assumir o SID de cabeça — confirmar sempre via `grep` no `/var/ossec/ruleset/rules/`).
+  2. Escrever a regra em `local_rules.xml` com `id` na faixa `100000+`.
+  3. Validar sintaxe sem reiniciar nada: `sudo /var/ossec/bin/wazuh-analysisd -t`.
+  4. Reiniciar o manager: `sudo systemctl restart wazuh-manager`.
+  5. Testar a decodificação/regra com `sudo /var/ossec/bin/wazuh-logtest` (útil para regras simples; **não confiável para correlação com `frequency`/`timeframe`**, pois cada linha digitada é tratada como sessão isolada, sem acumular estado).
+  6. Validar de ponta a ponta com tráfego real, conferindo `sudo tail -f /var/ossec/logs/alerts/alerts.json`.
+
+### Regra implementada: SID 100002 — login bem-sucedido após múltiplas falhas de chave SSH
+
+```xml
+<group name="local,syslog,sshd,">
+  <rule id="100002" level="12" frequency="3" timeframe="180">
+    <if_sid>5715</if_sid>
+    <if_matched_sid>5762</if_matched_sid>
+    <same_source_ip />
+    <description>sshd: successful login after multiple failed attempts from same source</description>
+  </rule>
+</group>
+```
+
+- **Lógica**: dispara quando um login SSH bem-sucedido (`5715`) acontece dentro de 180s após 3+ ocorrências de reset de conexão por falha de chave (`5762`), vindas do mesmo IP de origem.
+- **Por que `5762` e não outro SID de "authentication failed"** — este foi o ponto de maior aprendizado do processo, documentado para não repetir o erro:
+  - O ambiente usa **somente autenticação por chave pública** (sem senha habilitada). Isso significa que os SIDs "clássicos" de força bruta por senha (`5716` genérico, `5760` para `Failed password|Failed keyboard|authentication error`) **não se aplicam** — eles nunca disparam nesse setup, porque o cliente SSH nem chega a tentar senha.
+  - O log real gerado por uma tentativa com chave inválida é: `Connection reset by authenticating user <user> <ip> port <porta> [preauth]` — mensagem completamente diferente de "Failed password".
+  - Esse padrão bate com o SID **`5762`** (`sshd: connection reset`, level 4), confirmado via `wazuh-logtest` contra um log real coletado com `journalctl -u ssh`.
+  - **Lição**: sempre confirmar o SID contra um log real do próprio ambiente (via `wazuh-logtest`), nunca assumir pela descrição/documentação — o mesmo "tipo" de evento (auth failed) pode ter SIDs completamente diferentes dependendo do método de autenticação usado (senha vs. chave) e da mensagem exata gerada pelo `sshd`.
+- **Teste de validação realizado** (via SSH real, não só `wazuh-logtest`):
+  1. 3 tentativas de conexão com uma chave `ed25519` gerada só para teste (não cadastrada no agent) → 3 alertas `5762` no manager.
+  2. 1 conexão bem-sucedida com a chave real (`wazuh-server.pub`, a mesma usada pelo Terraform em `public_key_path`) dentro da janela de 180s.
+  3. Resultado: alerta `100002` disparado, `level: 12`, com `previous_output` mostrando as falhas anteriores como contexto — confirmando a correlação funcionando ponta a ponta.
+- **Pendências/ideias para próximas regras** (não implementadas ainda):
+  - Regra de força bruta "pura" (só as falhas, sem exigir sucesso em seguida) — usar o mesmo SID base `5762` com `frequency`/`timeframe`/`same_source_ip`, sem o `if_sid=5715`.
+  - Investigar o alerta `510` (`rootcheck` — "Trojaned version of file detected" em `/usr/bin/md5sum`) que apareceu durante os testes — provável falso positivo do scan nativo de integridade, mas ainda não investigado a fundo.
 
 ## Débitos técnicos / pontos de atenção conhecidos
 
@@ -116,8 +156,11 @@ curl https://checkip.amazonaws.com
 
 - [ ] Integração AWS: GuardDuty + CloudTrail → S3 → módulo `aws-s3` do Wazuh (requer IAM Role dedicada com leitura restrita aos buckets)
 - [x] Segundo agent, em instância Linux separada, para simular múltiplas plataformas monitoradas — provisionado via Terraform (`terraform/`)
-- [ ] Instalar e registrar o Wazuh agent na instância Linux provisionada (repetir o fluxo de enrollment: SG 1515 → 1514, `manager address` via DuckDNS)
-- [ ] Regras de alerta customizadas no dashboard
+- [x] Instalar e registrar o Wazuh agent na instância Linux provisionada — agent `Linux-Agent` ativo, enrollment via DuckDNS
+- [x] Primeira regra de alerta customizada (SID `100002` — login após múltiplas falhas de chave SSH), validada com tráfego real — ver seção dedicada acima
+- [ ] Regra de força bruta "pura" (só falhas repetidas, sem exigir sucesso) — variação mais simples da 100002, mesmo SID base (`5762`)
+- [ ] Investigar alerta `510` (rootcheck — possível falso positivo em `/usr/bin/md5sum`)
+- [ ] Mais regras de alerta customizadas conforme necessidade (ex: mudança em arquivos críticos via `syscheck`)
 - [ ] Migrar o Wazuh Server (EC2, `wazuh-sg`, EIP) para Terraform, usando o padrão do agent como base
 - [ ] Configurar backend remoto para o Terraform state (S3 + DynamoDB lock)
 - [ ] AWS Budgets / billing alarm, já que a conta é free tier
