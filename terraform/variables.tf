@@ -23,12 +23,17 @@ variable "vpc_id" {
   default = "vpc-06ff848d9b6540e15"
 }
 
+variable "personal_ip" {
+  description = "Personal PC public IP"
+  type        = string
+}
+
 variable "professional_ip" {
-  description = "My professional PC's public IP"
+  description = "Professional PC public IP"
   type        = string
 }
 
 variable "public_key_path" {
-  description = "Path tp the SSH public key"
+  description = "Path to the SSH public key"
   type        = string
 }
