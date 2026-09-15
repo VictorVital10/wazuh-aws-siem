@@ -17,6 +17,7 @@ Projeto de estudo/portfólio, parte da iniciativa **VV Cloud Security**.
 - [Destaques](#destaques)
 - [Objetivo](#objetivo)
 - [Arquitetura](#arquitetura)
+- [Integração AWS](#integracao-aws)
 - [Provisionamento](#provisionamento)
 - [Segurança aplicada](#seguranca)
 - [Débitos técnicos conhecidos](#debitos)
@@ -29,6 +30,7 @@ Projeto de estudo/portfólio, parte da iniciativa **VV Cloud Security**.
 - 🔐 **Hardening aplicado, não só documentado**: TLS via Let's Encrypt, acesso restrito por IP em todas as portas sensíveis, chaves `ed25519` por máquina, segredos fora do Git.
 - 🧱 **Primeira migração para IaC**: agent Linux provisionado via Terraform, com usuário/grupo IAM dedicado seguindo o princípio de least privilege.
 - 🧾 **Consciência de custo (FinOps)**: custo acompanhado via AWS Cost Explorer, instância parada manualmente quando ociosa.
+- ☁️ **Integração de nuvem funcionando de ponta a ponta**: CloudTrail → S3 → Wazuh validado com teste real (não só configurado), aproveitando as regras nativas de compliance (GDPR, HIPAA, PCI-DSS, NIST) já embutidas no Wazuh.
 - 📚 **Troubleshooting documentado**: cada problema real (disco cheio, certificado não aplicando, IAM, `terraform destroy` acidental, IP dinâmico, SGs órfãos) registrado com causa raiz e correção — ver [`wazuh-deployment.md`](./wazuh-deployment.md).
 
 <a id="objetivo"></a>
@@ -39,7 +41,7 @@ Construir um ambiente prático de SIEM para estudar:
 - Detecção e correlação de eventos de segurança
 - Gestão de agents e coleta de logs
 - Hardening de infraestrutura na AWS
-- Integração futura com serviços de segurança da AWS (CloudTrail, GuardDuty)
+- Integração com serviços de segurança da AWS (CloudTrail já integrado; GuardDuty planejado)
 
 <a id="arquitetura"></a>
 ## Arquitetura
@@ -49,6 +51,7 @@ Topologia **all-in-one**: uma única instância EC2 rodando manager, indexer e d
 ```mermaid
 flowchart LR
     subgraph WS["EC2 - Wazuh-Server (all-in-one)"]
+        ROLE[IAM Role - S3 ReadOnly]
         MGR[Wazuh Manager]
         IDX[Wazuh Indexer]
         DSH[Wazuh Dashboard]
@@ -57,12 +60,18 @@ flowchart LR
     AGW[Agent Windows]
     AGL[Agent Linux - via Terraform]
     USR[Usuário]
+    CT[CloudTrail - multi-região]
+    S3CT[(S3 - CloudTrail logs)]
 
     AGW -- "1514 / 1515 via DuckDNS" --> MGR
     AGL -- "1514 / 1515 via DuckDNS" --> MGR
     MGR --> IDX
     IDX --> DSH
     USR -- "HTTPS 443" --> DSH
+
+    CT -- "grava logs" --> S3CT
+    S3CT -- "polling via módulo aws-s3" --> ROLE
+    ROLE --> MGR
 ```
 
 | Componente | Detalhe |
@@ -76,6 +85,38 @@ flowchart LR
 | Wazuh | v4.14.7 |
 | Instância EC2 (Linux Agent) | `t3.micro`, provisionada via Terraform |
 | Security Group (Linux Agent) | Porta 22 (SSH) restrita a IP específico; egress liberado |
+
+<a id="integracao-aws"></a>
+## Integração AWS
+
+Integração de fontes de log nativas da AWS ao Wazuh, via módulo `aws-s3`.
+
+### CloudTrail → S3 → Wazuh (concluído, validado com teste real)
+
+| Componente | Detalhe |
+|---|---|
+| CloudTrail | Trail multi-região |
+| S3 (CloudTrail) | Bucket dedicado `vv-wazuh-cloudtrail-logs` |
+| IAM Role | Anexada à instância EC2 do Wazuh Server — policy `AmazonS3ReadOnlyAccess`, sem credenciais estáticas (a instância assume a role automaticamente via instance profile) |
+| Módulo `aws-s3` (Wazuh) | `type="cloudtrail"`, intervalo de polling ajustável (testado em 10m e 3m) |
+
+- **Validação**: teste controlado — criação e exclusão de buckets S3 de teste — confirmou o evento aparecendo no dashboard do Wazuh dentro de alguns minutos. Latência observada: ~7-10 minutos, dominada pelo delay de entrega do CloudTrail somado ao intervalo de polling.
+- **Descoberta**: o Wazuh já traz regras nativas de compliance mapeadas para eventos do CloudTrail (GDPR, HIPAA, PCI-DSS, NIST) — sem necessidade de regra customizada para isso.
+
+### GuardDuty (pendente)
+
+- Bucket S3 dedicado (`vv-wazuh-guardduty-findings`) já criado.
+- GuardDuty **ainda não ativado** — o free trial de 30 dias gera custo depois disso; ativação adiada até decidir o momento certo no lab.
+
+<details>
+<summary><strong>Troubleshooting — módulo aws-s3</strong></summary>
+
+Dois erros reais encontrados na configuração:
+
+1. **Path duplicado (`AWSLogs/AWSLogs/`)**: causado por incluir a tag `<path>` manualmente na configuração do bucket, quando o parser nativo do tipo `cloudtrail` já monta o caminho completo sozinho. Correção: remover o `<path>` customizado e deixar o parser nativo resolver.
+2. **`AccessDenied`**: causado por uma policy customizada incompleta (`S3FilesReadOnlyAccess`), que não incluía a permissão `s3:ListBucket` — necessária para o módulo listar objetos antes de lê-los. Correção: substituída pela policy gerenciada `AmazonS3ReadOnlyAccess` (mais ampla que o necessário — ver [Débitos técnicos conhecidos](#debitos)).
+
+</details>
 
 <a id="provisionamento"></a>
 ## Provisionamento
@@ -124,11 +165,14 @@ Deploy já validado (`terraform apply`) — instância e SG criados e funcionand
 - ⚠️ Terraform state é local, sem backend remoto (ex: S3 + DynamoDB lock) — risco em caso de perda do arquivo `.tfstate`.
 - ⚠️ Sem budget/billing alarm configurado formalmente.
 - ⚠️ Volume EBS root inicial (8GB) mostrou-se insuficiente para a instalação all-in-one do Wazuh; recomendado provisionar 30-50GB desde a criação da instância.
+- ⚠️ Policy da IAM Role do Wazuh Server (`AmazonS3ReadOnlyAccess`) é mais ampla que o necessário — concede leitura a todos os buckets S3 da conta, não só aos dois do projeto. Refinamento futuro: policy customizada restrita aos ARNs específicos de `vv-wazuh-cloudtrail-logs` e `vv-wazuh-guardduty-findings`.
 
 <a id="proximos"></a>
 ## Próximos passos
 
-- [ ] Integração AWS: GuardDuty + CloudTrail → S3 → módulo `aws-s3` do Wazuh
+- [x] Integração AWS: CloudTrail → S3 → módulo `aws-s3` do Wazuh — validado de ponta a ponta com teste real
+- [ ] Ativar GuardDuty (adiado — geraria custo após os 30 dias de trial gratuito)
+- [ ] Regra de alerta customizada usando dados AWS (CloudTrail/GuardDuty)
 - [x] Segundo agent, em instância Linux separada, para simular múltiplas plataformas monitoradas — provisionado via Terraform
 - [x] Instalar e registrar o Wazuh agent na instância Linux provisionada — status Active
 - [ ] Regras de alerta customizadas no dashboard
