@@ -200,7 +200,7 @@ Custo verificado via **AWS Cost Explorer** (console de Billing and Cost Manageme
 | Terraform state | ⚠️ Local, sem backend remoto |
 | Usuário/grupo IAM Terraform | ⚠️ Criados; policy exata anexada — a confirmar |
 | SGs órfãos | ✅ Limpos (4 removidos) |
-| Billing/FinOps | ⚠️ Cost Explorer verificado; parada manual de instância ociosa como prática adotada; automação em backlog |
+| Billing/FinOps | ✅ Cost Explorer verificado; parada manual de instância ociosa como prática adotada; AWS Budget de US$25/mês configurado, com alertas em 50%, 80% e 100%; automação de start/stop ainda em backlog |
 
 ### Próximos passos
 
@@ -209,6 +209,6 @@ Custo verificado via **AWS Cost Explorer** (console de Billing and Cost Manageme
 - [ ] Regras de alerta customizadas no dashboard
 - [ ] Migrar o Wazuh Server (EC2, `wazuh-sg`, EIP) para Terraform, usando o padrão do agent Linux como base
 - [ ] Configurar backend remoto para o Terraform state (S3 + DynamoDB lock)
-- [ ] AWS Budgets / billing alarm, já que a conta é free tier
+- [x] AWS Budgets / billing alarm — orçamento de US$25/mês, alertas em 50%, 80% e 100%
 - [ ] Automatizar atualização das regras de SG quando o IP dinâmico mudar (ex: script ou Lambda consultando `checkip.amazonaws.com`)
 - [ ] Automatizar start/stop da instância ociosa (ex: EventBridge Scheduler)

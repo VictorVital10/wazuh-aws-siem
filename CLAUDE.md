@@ -106,7 +106,6 @@ Lab de SIEM usando **Wazuh** hospedado na AWS, em formato **all-in-one** (manage
 
 - **Wazuh Server ainda manual**: apenas o agent Linux está em Terraform até o momento. Se/quando o Server for migrado, os recursos existentes (EC2, SG `wazuh-sg`, EIP) precisarão ser importados (`terraform import`) ou recriados do zero via código — decisão em aberto.
 - **Terraform state local, sem backend remoto** (ex: S3 + DynamoDB lock) — sem colaboração multi-máquina segura nem locking.
-- **Sem budget/billing alarm configurado formalmente** — vale considerar AWS Budgets ou CloudWatch Billing Alarm, já que é conta free tier com limites.
 - **Volume EBS root inicial (8GB) é insuficiente** para instalação all-in-one do Wazuh — causa disk full na instalação do wazuh-manager. Sempre provisionar 30-50GB desde a criação da instância.
 - **Path de download do instalador**: `https://packages.wazuh.com/4.x/wazuh-install.sh` retornou `AccessDenied` em uma tentativa; o path versionado `https://packages.wazuh.com/4.14/wazuh-install.sh` funcionou de forma consistente. Preferir sempre a versão explícita.
 
@@ -163,7 +162,7 @@ curl https://checkip.amazonaws.com
 - [ ] Mais regras de alerta customizadas conforme necessidade (ex: mudança em arquivos críticos via `syscheck`)
 - [ ] Migrar o Wazuh Server (EC2, `wazuh-sg`, EIP) para Terraform, usando o padrão do agent como base
 - [ ] Configurar backend remoto para o Terraform state (S3 + DynamoDB lock)
-- [ ] AWS Budgets / billing alarm, já que a conta é free tier
+- [x] AWS Budgets / billing alarm — orçamento de US$25/mês, alertas em 50%, 80% e 100%
 
 ## Commit convention
 

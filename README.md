@@ -163,7 +163,6 @@ Deploy já validado (`terraform apply`) — instância e SG criados e funcionand
 
 - ⚠️ Wazuh Server ainda provisionado manualmente — apenas o agent Linux está em Terraform até o momento.
 - ⚠️ Terraform state é local, sem backend remoto (ex: S3 + DynamoDB lock) — risco em caso de perda do arquivo `.tfstate`.
-- ⚠️ Sem budget/billing alarm configurado formalmente.
 - ⚠️ Volume EBS root inicial (8GB) mostrou-se insuficiente para a instalação all-in-one do Wazuh; recomendado provisionar 30-50GB desde a criação da instância.
 - ⚠️ Policy da IAM Role do Wazuh Server (`AmazonS3ReadOnlyAccess`) é mais ampla que o necessário — concede leitura a todos os buckets S3 da conta, não só aos dois do projeto. Refinamento futuro: policy customizada restrita aos ARNs específicos de `vv-wazuh-cloudtrail-logs` e `vv-wazuh-guardduty-findings`.
 
@@ -178,7 +177,7 @@ Deploy já validado (`terraform apply`) — instância e SG criados e funcionand
 - [ ] Regras de alerta customizadas no dashboard
 - [ ] Migrar o Wazuh Server (EC2, SG, EIP) para Terraform, uma vez validado o padrão adotado no agent
 - [ ] Configurar backend remoto para o Terraform state (S3 + lock)
-- [ ] Configurar AWS Budgets / billing alarm
+- [x] Configurar AWS Budgets / billing alarm — orçamento de US$25/mês, alertas em 50%, 80% e 100%
 
 ---
 
