@@ -8,7 +8,7 @@
 
 SIEM com **Wazuh** na **AWS**, all-in-one (manager + indexer + dashboard numa única EC2), com CloudTrail, GuardDuty e KMS integrados via S3 — GuardDuty em setup **cross-account**.
 
-📄 Passo a passo completo, com troubleshooting real: [`wazuh-deployment.md`](./wazuh-deployment.md).
+📄 Quer ver como cada etapa do deploy foi construída? O [`WAZUH-DEPLOYMENT.md`](./WAZUH-DEPLOYMENT.md) traz o passo a passo completo, com os erros reais encontrados no caminho e como cada um foi corrigido.
 
 ## Seções
 
@@ -26,7 +26,7 @@ SIEM com **Wazuh** na **AWS**, all-in-one (manager + indexer + dashboard numa ú
 - 🧱 **IaC**: agent Linux provisionado via Terraform — primeiro recurso do projeto migrado para código.
 - 🧾 **FinOps**: custo acompanhado via Cost Explorer + AWS Budgets, instância parada manualmente quando ociosa.
 - 🛠️ **Deploy real**: SIEM all-in-one funcional na AWS, do zero ao agent monitorando eventos.
-- 📚 **Troubleshooting documentado**: cada problema real registrado com causa raiz e correção — ver [`wazuh-deployment.md`](./wazuh-deployment.md).
+- 📚 **Troubleshooting documentado**: cada problema real registrado com causa raiz, correção e aprendizado. Detalhes em [`WAZUH-DEPLOYMENT.md`](./WAZUH-DEPLOYMENT.md).
 
 <a id="arquitetura"></a>
 ## Arquitetura
@@ -123,6 +123,10 @@ Módulo `aws-s3` do Wazuh Manager (polling a cada 3 minutos), com dois buckets c
 - State local, sem backend remoto.
 
 </details>
+
+## 📖 Saiba mais
+
+Este README traz a visão geral. As decisões e os problemas resolvidos no caminho (disco cheio, certificado, IAM, IP dinâmico e outros) estão em [`WAZUH-DEPLOYMENT.md`](./WAZUH-DEPLOYMENT.md).
 
 ## 📎 Link para o Post no LinkedIn
 

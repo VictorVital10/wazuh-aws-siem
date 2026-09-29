@@ -35,7 +35,7 @@ Projeto de SIEM usando **Wazuh** hospedado na AWS, em formato **all-in-one** (ma
 - **Acesso SSH**: restrito por IP público (`/32`) no Security Group. EC2 Instance Connect (browser) usado apenas no bootstrap inicial, antes de haver chave configurada — removido do SG depois.
 - **Manager address para agents**: usar o domínio DuckDNS, nunca o IP direto — mantém os agents funcionando mesmo se o Elastic IP mudar no futuro.
 - **Credenciais**: armazenadas no KeePass (chaves SSH, senhas do dashboard). Nunca deixadas só no output do terminal.
-- **Documentação**: OneNote (conceitos/hardening), Word (processos passo a passo), Markdown (registro técnico do projeto, como este e o `wazuh-deployment.md`).
+- **Documentação**: OneNote (conceitos/hardening), Word (processos passo a passo), Markdown (registro técnico do projeto, como este e o `WAZUH-DEPLOYMENT.md`).
 
 ## Avisos de segurança (aplicados até aqui)
 
@@ -167,7 +167,7 @@ Ambas as fontes são consumidas pelo mesmo módulo `aws-s3` do Wazuh Manager, co
 
 ## Troubleshooting documentado (resumo)
 
-Detalhes completos em `wazuh-deployment.md`. Resumo rápido para referência rápida:
+Detalhes completos em `WAZUH-DEPLOYMENT.md`. Resumo rápido para referência rápida:
 
 1. **Disco cheio na instalação do wazuh-manager** → expandir EBS (console) + `growpart`/`resize2fs` (SO) + limpar pacote quebrado (`dpkg --remove --force-remove-reinstreq`, `rm -rf /var/ossec`) + reinstalar com `wazuh-install.sh -a -o`.
 2. **Certificado Let's Encrypt não aplicava** → edição do `opensearch_dashboards.yml` via `nano` não salvou; corrigido com `sed` direto no arquivo, seguido de `systemctl restart wazuh-dashboard`.

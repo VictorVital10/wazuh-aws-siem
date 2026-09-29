@@ -2,7 +2,7 @@
 
 SIEM com Wazuh na AWS, all-in-one (manager + indexer + dashboard numa única EC2). Projeto de estudo/portfólio.
 
-Detalhes completos e histórico de decisões: `CLAUDE.md`. Log de deploy e troubleshooting: `wazuh-deployment.md`.
+Detalhes completos e histórico de decisões: `CLAUDE.md`. Log de deploy e troubleshooting: `WAZUH-DEPLOYMENT.md`.
 
 ## Arquitetura em duas contas
 
