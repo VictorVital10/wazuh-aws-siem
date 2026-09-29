@@ -130,7 +130,7 @@ Este README traz a visão geral. As decisões e os problemas resolvidos no camin
 
 ## 📎 Link para o Post no LinkedIn
 
-👉 [Acessar publicação]()
+👉 [Acessar publicação](https://www.linkedin.com/feed/update/urn:li:activity:7510658713473409024/)
 
 ---
 
