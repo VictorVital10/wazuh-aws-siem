@@ -6,7 +6,7 @@
 ![Wazuh](https://img.shields.io/badge/SIEM-Wazuh_4.14.7-1A73E8)
 ![Ubuntu](https://img.shields.io/badge/OS-Ubuntu-E95420?logo=ubuntu&logoColor=white)
 
-SIEM com **Wazuh** na **AWS**, all-in-one (manager + indexer + dashboard numa única EC2), com CloudTrail, GuardDuty e KMS integrados via S3 — GuardDuty em setup **cross-account**.
+Pipeline de segurança na AWS com **Wazuh** (SIEM), all-in-one (manager + indexer + dashboard numa única EC2): detecção de ameaças com CloudTrail, GuardDuty (**cross-account**), S3, KMS e Terraform.
 
 📄 Quer ver como cada etapa do deploy foi construída? O [`WAZUH-DEPLOYMENT.md`](./WAZUH-DEPLOYMENT.md) traz o passo a passo completo, com os erros reais encontrados no caminho e como cada um foi corrigido.
 
@@ -21,7 +21,7 @@ SIEM com **Wazuh** na **AWS**, all-in-one (manager + indexer + dashboard numa ú
 <a id="destaques"></a>
 ## Destaques
 
-- ☁️ **Duas integrações AWS de ponta a ponta**: CloudTrail e GuardDuty (**cross-account**) → S3 → Wazuh, ambas validadas com testes reais.
+- ☁️ **Pipeline de detecção ponta a ponta**: CloudTrail e GuardDuty (**cross-account**) → S3 → Wazuh, ambas as integrações validadas com testes reais.
 - 🔐 **Hardening aplicado**: TLS via Let's Encrypt, acesso restrito por IP, chaves `ed25519` por máquina, IAM roles em vez de credenciais estáticas, segredos fora do Git.
 - 🧱 **IaC**: agent Linux provisionado via Terraform — primeiro recurso do projeto migrado para código.
 - 🧾 **FinOps**: custo acompanhado via Cost Explorer + AWS Budgets, instância parada manualmente quando ociosa.
@@ -87,7 +87,7 @@ flowchart LR
 <a id="integracao-aws"></a>
 ## Integração AWS
 
-Módulo `aws-s3` do Wazuh Manager (polling a cada 3 minutos), com dois buckets configurados.
+O módulo `aws-s3` do Wazuh Manager é o coração do pipeline de segurança: faz o polling (a cada 3 minutos) dos dois buckets configurados.
 
 **CloudTrail → S3 → Wazuh**
 - Trail multi-região, bucket `vv-wazuh-cloudtrail-logs`, na mesma conta do Wazuh Server.

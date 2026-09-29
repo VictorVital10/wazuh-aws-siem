@@ -4,7 +4,7 @@ Projeto de SIEM usando **Wazuh** hospedado na AWS, em formato **all-in-one** (ma
 
 ## Contexto do projeto
 
-- **Objetivo**: projeto de SIEM com Wazuh para estudo de detecção, correlação de eventos e integração com ferramentas de segurança da AWS (CloudTrail e GuardDuty, este último em setup cross-account).
+- **Objetivo**: projeto de SIEM com Wazuh para estudo de um pipeline de segurança completo — detecção, correlação de eventos e integração com ferramentas de segurança da AWS (CloudTrail e GuardDuty, este último em setup cross-account).
 - **Topologia**: EC2 única (all-in-one), sem cluster, sem HA.
 - **Conta AWS (Wazuh Server)**: "Conta B", standalone free tier, separada das organizations `vav`/`jbdsa` — nunca deve ser unida a uma Organization (perderia o Free Plan).
 - **Conta AWS (GuardDuty)**: "Conta A", PAYG, separada da Conta B — hospeda GuardDuty, o bucket S3 de findings e a chave KMS usada para criptografá-los. Acesso da Conta B à Conta A é feito só via bucket policy (cross-account), sem credenciais estáticas.
