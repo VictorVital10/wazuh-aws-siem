@@ -1,6 +1,6 @@
 # Wazuh AWS SIEM — Registro de Deploy
 
-Registro técnico do deploy do laboratório Wazuh na AWS, em ordem cronológica, incluindo os problemas encontrados e como foram resolvidos. Serve como referência para reproduzir o ambiente ou entender decisões tomadas no caminho. Visão geral do projeto está no `README.md`; contexto e convenções de trabalho, no `CLAUDE.md`.
+Registro técnico do deploy do projeto Wazuh na AWS, em ordem cronológica, incluindo os problemas encontrados e como foram resolvidos. Serve como referência para reproduzir o ambiente ou entender decisões tomadas no caminho. Visão geral do projeto está no `README.md`; contexto e convenções de trabalho, no `CLAUDE.md`.
 
 ## Índice
 
