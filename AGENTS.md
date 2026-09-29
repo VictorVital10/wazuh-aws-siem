@@ -1,243 +1,51 @@
 # wazuh-aws-siem
 
-Projeto de SIEM usando **Wazuh** hospedado na AWS, em formato **all-in-one** (manager + indexer + dashboard na mesma instância EC2). Projeto de estudo/portfólio — parte da iniciativa **VV Cloud Security**.
+SIEM com Wazuh na AWS, all-in-one (manager + indexer + dashboard numa única EC2). Projeto de estudo/portfólio.
 
-## Contexto do projeto
+Detalhes completos e histórico de decisões: `CLAUDE.md`. Log de deploy e troubleshooting: `wazuh-deployment.md`.
 
-- **Objetivo**: projeto de SIEM com Wazuh para estudo de detecção, correlação de eventos e integração com ferramentas de segurança da AWS (CloudTrail e GuardDuty, este último em setup cross-account).
-- **Topologia**: EC2 única (all-in-one), sem cluster, sem HA.
-- **Conta AWS (Wazuh Server)**: "Conta B", standalone free tier, separada das organizations `vav`/`jbdsa` — nunca deve ser unida a uma Organization (perderia o Free Plan).
-- **Conta AWS (GuardDuty)**: "Conta A", PAYG, separada da Conta B — hospeda GuardDuty, o bucket S3 de findings e a chave KMS usada para criptografá-los. Acesso da Conta B à Conta A é feito só via bucket policy (cross-account), sem credenciais estáticas.
-- **Provisionamento atual**: híbrido. O Wazuh Server (EC2 all-in-one, SG, EIP) continua manual, via console AWS + terminal (SSH/PowerShell). O agent Linux (segunda instância EC2 + SG dedicado) já é provisionado via **Terraform** — primeiro recurso do projeto migrado para IaC.
-- **Abordagem de aprendizado**: hands-on primeiro (console/CLI), automação depois. Prioridade em entender o "porquê" de cada passo, não só copiar comandos. Terraform foi introduzido só depois que o fluxo manual do Wazuh Server já estava validado e estável — segue a mesma lógica: entender antes de automatizar.
+## Arquitetura em duas contas
 
-## Estado atual da infraestrutura
+- **Conta B (Free Tier)**: Wazuh Server (EC2 all-in-one) e o agent Linux. Standalone, nunca unir a uma Organization.
+- **Conta A (PAYG)**: GuardDuty, bucket S3 de findings e a chave KMS. Acesso da Conta B é cross-account via bucket policy, sem credenciais estáticas.
+- Ambas em `us-east-2`.
 
-| Componente | Valor |
-|---|---|
-| Instância EC2 | `Wazuh-Server`, Ubuntu, `m7i-flex.large` (2 vCPU / 8GB RAM) |
-| Volume EBS (root) | 50GB (expandido de 8GB original — ver Troubleshooting) |
-| Security Group | `wazuh-sg` — portas 443, 22, 1514, 1515, todas restritas a IPs específicos (nunca `0.0.0.0/0`) |
-| Elastic IP | Alocado e associado à instância |
-| Domínio | DuckDNS (gratuito, apontando ao Elastic IP) — nome real omitido por segurança |
-| Certificado TLS | Let's Encrypt via certbot, válido até 12/11/2026, renovação automática |
-| Wazuh | v4.14.7, instalação all-in-one |
-| Agents registrados | 2 (Windows pessoal + `Linux-Agent` via Terraform, ambos Active) |
-| Instância EC2 (Linux Agent) | `linux_agent`, `t3.micro` — provisionada via Terraform |
-| Security Group (Linux Agent) | `agents_sg` — porta 22 restrita a IP específico, egress liberado — via Terraform |
-| Regras de alerta customizadas | 1 (`local_rules.xml`, SID `100002` — ver seção dedicada abaixo) |
-| Integração CloudTrail → S3 → Wazuh | Concluída, validada com teste real — módulo `aws-s3`, bucket `vv-wazuh-cloudtrail-logs` (mesma conta do Wazuh Server) |
-| Integração GuardDuty → S3 → Wazuh | Concluída, validada com Sample Findings — cross-account, ver seção dedicada abaixo |
+## Estado atual (resumo)
 
-## Convenções adotadas
+- Wazuh Server: Ubuntu `m7i-flex.large`, EBS 50GB, v4.14.7. Elastic IP + DuckDNS + TLS (Let's Encrypt).
+- Agent Linux (`linux_agent`, `t3.micro`) via Terraform; agent Windows manual. Ambos Active.
+- Integrações AWS concluídas: CloudTrail (`vv-wazuh-cloudtrail-logs`) e GuardDuty (`vv-wazuh-guardduty-findingss`, cross-account), ambas via módulo `aws-s3` do Wazuh Manager.
+- 1 regra de alerta customizada em produção (SID `100002`).
 
-- **Chaves SSH**: `ed25519`, um par por máquina (nunca reutilizar/copiar chave privada entre computadores). Organizadas em `%USERPROFILE%\.ssh\Wazuh-Server\`. Alias configurado em `~/.ssh/config` (host `Wazuh-Server`).
-- **Acesso SSH**: restrito por IP público (`/32`) no Security Group. EC2 Instance Connect (browser) usado apenas no bootstrap inicial, antes de haver chave configurada — removido do SG depois.
-- **Manager address para agents**: usar o domínio DuckDNS, nunca o IP direto — mantém os agents funcionando mesmo se o Elastic IP mudar no futuro.
-- **Credenciais**: armazenadas no KeePass (chaves SSH, senhas do dashboard). Nunca deixadas só no output do terminal.
-- **Documentação**: OneNote (conceitos/hardening), Word (processos passo a passo), Markdown (registro técnico do projeto, como este e o `wazuh-deployment.md`).
+## Convenções
 
-## Avisos de segurança (aplicados até aqui)
+- Chaves SSH `ed25519`, uma por máquina, nunca reutilizada.
+- Agents apontam para o manager via domínio DuckDNS, nunca IP direto.
+- Nenhuma porta sensível (22, 443, 1514, 1515) exposta a `0.0.0.0/0` — sempre restrita por IP.
+- Segredos (chaves, senhas, `.tfvars`) nunca no Git nem só no terminal — KeePass + `.gitignore`.
+- Terraform em `terraform/`, provider `hashicorp/aws` v6.60.0, state local (sem backend remoto).
 
-- Wazuh Dashboard (porta 443) **nunca exposto para `0.0.0.0/0`** — restrito ao IP público de cada máquina usada no projeto.
-- Portas 1514 (streaming de eventos) e 1515 (enrollment de agents) também restritas por IP, não abertas ao mundo.
-- SSH (porta 22) restrito por IP; chave pública/privada em vez de senha.
-- Elastic IP mantido sempre associado à instância rodando, para evitar cobrança por IP ocioso.
-- Senha padrão do dashboard (`admin`) gerada na instalação — recuperável via `wazuh-install-files.tar` caso não tenha sido salva na hora.
+## Regras de alerta customizadas
 
-## Terraform (agent Linux)
+- Local: `/var/ossec/etc/rules/local_rules.xml`. Nunca editar regras nativas em `/var/ossec/ruleset/rules/`.
+- SID customizado sempre a partir de `100000`.
+- Antes de usar um SID nativo numa regra, confirmar contra um log real com `wazuh-logtest` — nunca assumir pela descrição (mesmo "tipo" de evento pode ter SIDs diferentes dependendo do método usado, ex.: auth por chave vs. senha).
+- Fluxo: escrever a regra → validar sintaxe (`wazuh-analysisd -t`) → `systemctl restart wazuh-manager` → testar com `wazuh-logtest` → validar de ponta a ponta com tráfego real (`tail -f alerts.json`).
 
-- **Localização**: `terraform/` na raiz do projeto.
-- **Arquivos**: `providers.tf` (provider `hashicorp/aws` v6.60.0, autenticação via AWS CLI profile `Terraform`, região `us-east-2`), `variables.tf`, `main.tf`, `terraform.tfvars` (gitignored).
-- **Recursos gerenciados**:
-  - `aws_instance.linux_agent` — EC2 `t3.micro`, AMI Ubuntu (`var.instance_ami`).
-  - `aws_security_group.agents_sg` — SG dedicado ao agent, separado do `wazuh-sg` do Wazuh Server.
-  - `aws_vpc_security_group_ingress_rule.ssh_personal` — libera 22/tcp só para `var.personal_ip`.
-  - `aws_vpc_security_group_egress_rule.allow_all_outbound` — egress liberado (`0.0.0.0/0`).
-  - `aws_key_pair.wazuh_agent_key` — chave pública `ed25519` dedicada (path local em `terraform.tfvars`, via `var.public_key_path`).
-- **Regra de ingress para IP profissional** (`ssh_professional`) está comentada em `main.tf` — ativar quando necessário, junto com a var `professional_ip` (hoje vazia em `terraform.tfvars`).
-- **Segredos**: `terraform.tfvars`, `*.tfstate`/`*.tfstate.backup` e `.terraform/` já cobertos pelo `.gitignore`. `tfplan.out` foi adicionado ao `.gitignore` — o binário do plan embute os valores das variáveis (incluindo IP pessoal) e não estava coberto pelo padrão `*.tfplan`.
-- **State**: local (`terraform.tfstate` na própria pasta `terraform/`), sem backend remoto — sem locking, risco de perda se o arquivo sumir.
-- **Deploy**: `terraform apply` já executado com sucesso — instância e SG ativos na conta AWS do projeto.
-- **Comandos úteis**:
-  ```
-  cd terraform
-  terraform plan -out=tfplan.out
-  terraform apply tfplan.out
-  ```
+## Provisionamento
 
-## Regras de alerta customizadas (detecção)
+- **Wazuh Server**: manual, via console AWS + terminal (SSH/PowerShell).
+- **Agent Linux**: via Terraform — único recurso do projeto em IaC até agora.
 
-- **Localização**: `/var/ossec/etc/rules/local_rules.xml` no Wazuh Server. Nunca editar regras nativas em `/var/ossec/ruleset/rules/` (são sobrescritas em updates).
-- **Convenção de SID**: regras customizadas começam em `100000+` (faixa reservada, evita conflito com o ruleset oficial).
-- **Fluxo de trabalho adotado** para criar/validar uma regra nova (repetir para as próximas):
-  1. Identificar o evento que se quer detectar e a regra nativa correspondente (nunca assumir o SID de cabeça — confirmar sempre via `grep` no `/var/ossec/ruleset/rules/`).
-  2. Escrever a regra em `local_rules.xml` com `id` na faixa `100000+`.
-  3. Validar sintaxe sem reiniciar nada: `sudo /var/ossec/bin/wazuh-analysisd -t`.
-  4. Reiniciar o manager: `sudo systemctl restart wazuh-manager`.
-  5. Testar a decodificação/regra com `sudo /var/ossec/bin/wazuh-logtest` (útil para regras simples; **não confiável para correlação com `frequency`/`timeframe`**, pois cada linha digitada é tratada como sessão isolada, sem acumular estado).
-  6. Validar de ponta a ponta com tráfego real, conferindo `sudo tail -f /var/ossec/logs/alerts/alerts.json`.
+## Comandos úteis
 
-### Regra implementada: SID 100002 — login bem-sucedido após múltiplas falhas de chave SSH
-
-```xml
-<group name="local,syslog,sshd,">
-  <rule id="100002" level="12" frequency="3" timeframe="180">
-    <if_sid>5715</if_sid>
-    <if_matched_sid>5762</if_matched_sid>
-    <same_source_ip />
-    <description>sshd: successful login after multiple failed attempts from same source</description>
-  </rule>
-</group>
-```
-
-- **Lógica**: dispara quando um login SSH bem-sucedido (`5715`) acontece dentro de 180s após 3+ ocorrências de reset de conexão por falha de chave (`5762`), vindas do mesmo IP de origem.
-- **Por que `5762` e não outro SID de "authentication failed"** — este foi o ponto de maior aprendizado do processo, documentado para não repetir o erro:
-  - O ambiente usa **somente autenticação por chave pública** (sem senha habilitada). Isso significa que os SIDs "clássicos" de força bruta por senha (`5716` genérico, `5760` para `Failed password|Failed keyboard|authentication error`) **não se aplicam** — eles nunca disparam nesse setup, porque o cliente SSH nem chega a tentar senha.
-  - O log real gerado por uma tentativa com chave inválida é: `Connection reset by authenticating user <user> <ip> port <porta> [preauth]` — mensagem completamente diferente de "Failed password".
-  - Esse padrão bate com o SID **`5762`** (`sshd: connection reset`, level 4), confirmado via `wazuh-logtest` contra um log real coletado com `journalctl -u ssh`.
-  - **Lição**: sempre confirmar o SID contra um log real do próprio ambiente (via `wazuh-logtest`), nunca assumir pela descrição/documentação — o mesmo "tipo" de evento (auth failed) pode ter SIDs completamente diferentes dependendo do método de autenticação usado (senha vs. chave) e da mensagem exata gerada pelo `sshd`.
-- **Teste de validação realizado** (via SSH real, não só `wazuh-logtest`):
-  1. 3 tentativas de conexão com uma chave `ed25519` gerada só para teste (não cadastrada no agent) → 3 alertas `5762` no manager.
-  2. 1 conexão bem-sucedida com a chave real (`wazuh-server.pub`, a mesma usada pelo Terraform em `public_key_path`) dentro da janela de 180s.
-  3. Resultado: alerta `100002` disparado, `level: 12`, com `previous_output` mostrando as falhas anteriores como contexto — confirmando a correlação funcionando ponta a ponta.
-- **Pendências/ideias para próximas regras** (não implementadas ainda):
-  - Regra de força bruta "pura" (só as falhas, sem exigir sucesso em seguida) — usar o mesmo SID base `5762` com `frequency`/`timeframe`/`same_source_ip`, sem o `if_sid=5715`.
-  - Investigar o alerta `510` (`rootcheck` — "Trojaned version of file detected" em `/usr/bin/md5sum`) que apareceu durante os testes — provável falso positivo do scan nativo de integridade, mas ainda não investigado a fundo.
-
-## Integração AWS: CloudTrail e GuardDuty → S3 → Wazuh
-
-Ambas as fontes são consumidas pelo mesmo módulo `aws-s3` do Wazuh Manager, configurado em `/var/ossec/etc/ossec.conf`:
-
-```xml
-<wodle name="aws-s3">
-  <disabled>no</disabled>
-  <interval>3m</interval>
-  <run_on_start>yes</run_on_start>
-
-  <!-- CloudTrail -->
-  <bucket type="cloudtrail">
-    <name>vv-wazuh-cloudtrail-logs</name>
-    <aws_profile></aws_profile>
-  </bucket>
-
-  <!-- GuardDuty -->
-  <bucket type="guardduty">
-    <name>vv-wazuh-guardduty-findingss</name>
-    <aws_profile></aws_profile>
-  </bucket>
-</wodle>
-```
-
-`aws_profile` vazio porque a EC2 assume a role via instance profile — nenhuma credencial estática no `ossec.conf`.
-
-### CloudTrail → S3 → Wazuh (concluído)
-
-- Trail multi-região, bucket `vv-wazuh-cloudtrail-logs`, na mesma conta do Wazuh Server (Conta B).
-- IAM Role `EC2-S3-ReadOnly-Access` anexada à instância via instance profile.
-- Validado com teste real (criação/exclusão de bucket de teste) — evento no dashboard em ~7-10 min.
-- Regras nativas de compliance do Wazuh (GDPR, HIPAA, PCI-DSS, NIST) já cobrem os eventos de CloudTrail, sem regra customizada.
-
-### GuardDuty → S3 → Wazuh, cross-account (concluído)
-
-- **Contas**: GuardDuty, o bucket S3 e a chave KMS ficam na **Conta A (PAYG)**; o Wazuh Server (EC2) fica na **Conta B (Free Tier)**. Ambas as contas operam em `us-east-2`.
-- **Bucket**: `vv-wazuh-guardduty-findingss`, na Conta A. Caminho de exportação usado pelo GuardDuty: `AWSLogs/<account-id>/GuardDuty/us-east-2/AAAA/MM/DD/*.jsonl.gz`.
-- **KMS**: chave dedicada na Conta A, usada pelo GuardDuty para criptografar os findings exportados. A policy da chave precisou ser corrigida — o `aws:SourceAccount`/`aws:SourceArn` inicial apontava para a conta errada.
-- **Bucket policy** (Conta A): libera o GuardDuty para gravar em `AWSLogs/<account-id>/GuardDuty/us-east-2/*` (não em `Findings/*`, caminho assumido inicialmente e corrigido depois de confirmar o caminho real usado pelo GuardDuty) e libera leitura cross-account do bucket/objetos para a role `EC2-S3-ReadOnly-Access` da Conta B.
-- **IAM Role da EC2 (Conta B)**: `EC2-S3-ReadOnly-Access`, com duas policies:
-  - `AmazonS3ReadOnlyAccess` — leitura do S3 (mesma role usada para o CloudTrail).
-  - `EC2-KMS-Decrypt-CrossAccount` — permissão para decriptar objetos usando a chave KMS da Conta A.
-- **Teste de validação**: geração de Sample Findings no GuardDuty (Conta A) → export para S3 (frequência temporariamente ajustada de 6h para 15min só para acelerar o teste) → confirmado via `aws s3 ls s3://vv-wazuh-guardduty-findingss/AWSLogs/<account-id>/GuardDuty/us-east-2/... --recursive` na EC2 do Wazuh (Conta B): 10 arquivos `.jsonl.gz` (~12-31KB cada) → confirmado consumo pelo bucket `type="guardduty"` no `ossec.conf`.
-- **Lição**: sempre confirmar o caminho real de exportação do GuardDuty antes de escrever a bucket policy — a documentação/suposição inicial (`Findings/*`) não bateu com o caminho real (`AWSLogs/<account-id>/GuardDuty/<região>/`).
-
-### Pendências
-
-- Regra de alerta customizada usando dados de CloudTrail/GuardDuty (nenhuma criada ainda especificamente para essas fontes).
-- GuardDuty ativo desde o teste com Sample Findings — free trial de 30 dias gera custo depois; monitorar cobrança na Conta A.
-- Refinar `AmazonS3ReadOnlyAccess` (hoje mais ampla que o necessário — lê todos os buckets da conta) para uma policy restrita aos ARNs de `vv-wazuh-cloudtrail-logs` e `vv-wazuh-guardduty-findingss`.
-
-## Débitos técnicos / pontos de atenção conhecidos
-
-- **Wazuh Server ainda manual**: apenas o agent Linux está em Terraform até o momento. Se/quando o Server for migrado, os recursos existentes (EC2, SG `wazuh-sg`, EIP) precisarão ser importados (`terraform import`) ou recriados do zero via código — decisão em aberto.
-- **Terraform state local, sem backend remoto** (ex: S3 + DynamoDB lock) — sem colaboração multi-máquina segura nem locking.
-- **Volume EBS root inicial (8GB) é insuficiente** para instalação all-in-one do Wazuh — causa disk full na instalação do wazuh-manager. Sempre provisionar 30-50GB desde a criação da instância.
-- **Path de download do instalador**: `https://packages.wazuh.com/4.x/wazuh-install.sh` retornou `AccessDenied` em uma tentativa; o path versionado `https://packages.wazuh.com/4.14/wazuh-install.sh` funcionou de forma consistente. Preferir sempre a versão explícita.
-- **`AmazonS3ReadOnlyAccess` mais ampla que o necessário**: a role `EC2-S3-ReadOnly-Access` lê todos os buckets S3 da Conta B, não só `vv-wazuh-cloudtrail-logs`/`vv-wazuh-guardduty-findingss`. Refinamento futuro: policy customizada restrita aos ARNs específicos.
-- **GuardDuty com custo futuro**: ativo desde o teste com Sample Findings — free trial de 30 dias, depois disso passa a gerar custo na Conta A (PAYG).
-
-## Troubleshooting documentado (resumo)
-
-Detalhes completos em `wazuh-deployment.md`. Resumo rápido para referência rápida:
-
-1. **Disco cheio na instalação do wazuh-manager** → expandir EBS (console) + `growpart`/`resize2fs` (SO) + limpar pacote quebrado (`dpkg --remove --force-remove-reinstreq`, `rm -rf /var/ossec`) + reinstalar com `wazuh-install.sh -a -o`.
-2. **Certificado Let's Encrypt não aplicava** → edição do `opensearch_dashboards.yml` via `nano` não salvou; corrigido com `sed` direto no arquivo, seguido de `systemctl restart wazuh-dashboard`.
-3. **Agent Windows: Error 1925 (privilégios insuficientes)** → `msiexec /q` falha silenciosamente se o PowerShell não estiver elevado ("Executar como administrador").
-4. **Agent Windows preso em "Never connected"** → regra do SG para porta 1515 liberada primeiro (completa enrollment), depois 1514 (necessária para streaming de eventos passar a "Active").
-
-## Comandos do dia a dia
-
-**Conexão**
 ```
 ssh Wazuh-Server
-```
-
-**Status dos serviços**
-```
 sudo /var/ossec/bin/wazuh-control status
-sudo systemctl status wazuh-manager wazuh-indexer wazuh-dashboard
+sudo tail -f /var/ossec/logs/alerts/alerts.json
+curl https://checkip.amazonaws.com   # IP público atual, para atualizar o SG
 ```
-
-**Logs**
-```
-sudo tail -f /var/ossec/logs/ossec.log
-```
-
-**Recuperar credenciais geradas na instalação**
-```
-sudo tar -O -xvf wazuh-install-files.tar wazuh-install-files/wazuh-passwords.txt
-```
-
-**Verificar certificado ativo no dashboard**
-```
-openssl s_client -connect localhost:443 -servername <seu-dominio-duckdns> 2>/dev/null | openssl x509 -noout -issuer
-```
-
-**Seu IP público atual (para atualizar regras do SG)**
-```
-curl https://checkip.amazonaws.com
-```
-
-## Próximos passos
-
-- [x] Integração AWS: CloudTrail → S3 → módulo `aws-s3` do Wazuh — validada com teste real
-- [x] Integração AWS: GuardDuty → S3 → módulo `aws-s3` do Wazuh, cross-account (Conta A PAYG → Conta B Free Tier) — validada com Sample Findings
-- [ ] Regra de alerta customizada usando dados de CloudTrail/GuardDuty
-- [x] Segundo agent, em instância Linux separada, para simular múltiplas plataformas monitoradas — provisionado via Terraform (`terraform/`)
-- [x] Instalar e registrar o Wazuh agent na instância Linux provisionada — agent `Linux-Agent` ativo, enrollment via DuckDNS
-- [x] Primeira regra de alerta customizada (SID `100002` — login após múltiplas falhas de chave SSH), validada com tráfego real — ver seção dedicada acima
-- [ ] Regra de força bruta "pura" (só falhas repetidas, sem exigir sucesso) — variação mais simples da 100002, mesmo SID base (`5762`)
-- [ ] Investigar alerta `510` (rootcheck — possível falso positivo em `/usr/bin/md5sum`)
-- [ ] Mais regras de alerta customizadas conforme necessidade (ex: mudança em arquivos críticos via `syscheck`)
-- [ ] Migrar o Wazuh Server (EC2, `wazuh-sg`, EIP) para Terraform, usando o padrão do agent como base
-- [ ] Configurar backend remoto para o Terraform state (S3 + DynamoDB lock)
-- [x] AWS Budgets / billing alarm — orçamento de US$25/mês, alertas em 50%, 80% e 100%
-- [ ] Monitorar custo do GuardDuty após os 30 dias de trial gratuito (Conta A)
-- [ ] Refinar `AmazonS3ReadOnlyAccess` para uma policy restrita aos ARNs dos dois buckets do projeto
 
 ## Commit convention
 
-Formato: `<tipo>: descrição no imperativo`.
-
-- Tipos usados até aqui: `feat` (novo recurso/provisionamento), `security` (remoção de dados sensíveis, hardening), `docs` (documentação), `fix` (correção de bug), `chore` (manutenção sem impacto funcional).
-- Descrição em minúsculas, no imperativo (ex: "provision", "remove", "add", não "provisioned"/"removed"/"added"), sem ponto final.
-- Exemplos reais do histórico: `feat: provision linux agent via Terraform, EC2 + dedicated SG`, `security: remove exposed IPs, domain names, and files paths from .md file`.
-
-## Ferramentas e skills usadas até aqui
-
-- **AWS Console** (EC2, Security Groups, Volumes, Elastic IPs)
-- **SSH** (`ed25519`, `~/.ssh/config`)
-- **PowerShell** (Windows, instalação do agent)
-- **DuckDNS** (DNS dinâmico gratuito)
-- **certbot** (Let's Encrypt, modo standalone)
-- **KeePass** (armazenamento de credenciais)
-- **Terraform** (`hashicorp/aws` v6.60.0) — usado até aqui para provisionar o agent Linux (EC2 + SG dedicado + key pair)
+`<tipo>: descrição no imperativo`, minúsculo, sem ponto final. Tipos usados: `feat`, `fix`, `docs`, `security`, `chore`.
